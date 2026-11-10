@@ -2712,7 +2712,7 @@ func detectAgentHarness() string {
 func printAgentHint(harness string) {
 	fmt.Fprintf(os.Stderr, "rsh: похоже, ты внутри агентского харнесса (%s).\n", harness)
 	fmt.Fprintf(os.Stderr, "     rsh умеет работать MCP-сервером — агентам проще звать его инструментами:\n")
-	fmt.Fprintf(os.Stderr, "     {\"mcp\":{\"rsh\":{\"type\":\"stdio\",\"command\":[\"rsh\",\"mcp\"]}}}\n")
+	fmt.Fprintf(os.Stderr, "     {\"mcp\":{\"servers\":{\"rsh\":{\"type\":\"local\",\"command\":[\"rsh\",\"mcp\"]}}}}\n")
 	fmt.Fprintf(os.Stderr, "     (например opencode: секция mcp в opencode.json; выключить подсказку: RSH_MCP_HINT=0)\n")
 }
 
