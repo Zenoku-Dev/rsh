@@ -1,13 +1,13 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/rival-afk/zenoku-design/main/assets/rsh/png/readme-banner-dark.png">
-    <img src="https://raw.githubusercontent.com/rival-afk/zenoku-design/main/assets/rsh/png/readme-banner.png" alt="rsh" width="440">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Zenoku-Dev/zenoku-design/main/assets/rsh/png/readme-banner-dark.png">
+    <img src="https://raw.githubusercontent.com/Zenoku-Dev/zenoku-design/main/assets/rsh/png/readme-banner.png" alt="rsh" width="440">
   </picture>
 </p>
 
 # rsh
 
-Удалённая оболочка для инфраструктуры zenoku. Команды `rsh` идут через [auth](https://github.com/rival-afk/auth) (`auth.rival-afk.com`) → VPS → туннель к целевому узлу, поэтому ключи и адреса не нужны локально.
+Удалённая оболочка для инфраструктуры zenoku. Команды `rsh` идут через [auth](https://github.com/Zenoku-Dev/auth) (`auth.rival-afk.com`) → VPS → туннель к целевому узлу, поэтому ключи и адреса не нужны локально.
 
 ## Примеры
 
@@ -18,7 +18,7 @@ rsh pc on|off|reboot   # Wake-on-LAN / выключить / перезагруз
 rsh net resolve pc     # резолв имени узла в адрес
 ```
 
-Учётка и токены живут в `~/.rsh/` (`rsh id`, `config.json`, `hosts`). Лого и бренд-ассеты — в [rival-afk/zenoku-design](https://github.com/rival-afk/zenoku-design).
+Учётка и токены живут в `~/.rsh/` (`rsh id`, `config.json`, `hosts`). Лого и бренд-ассеты — в [rival-afk/zenoku-design](https://github.com/Zenoku-Dev/zenoku-design).
 
 ## Сборка
 

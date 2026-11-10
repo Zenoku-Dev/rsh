@@ -15,7 +15,7 @@ set -u
 export HOME="${HOME:-/root}"
 
 BRANCH=${RSH_BRANCH:-main}
-GIT_URL=${RSH_GIT_URL:-https://github.com/rival-afk/rsh}
+GIT_URL=${RSH_GIT_URL:-https://github.com/Zenoku-Dev/rsh}
 SRC=${RSH_SRC:-"$HOME/src/rsh"}
 BIN=${RSH_BIN:-"$HOME/bin/rsh"}
 LOG="${RSH_LOG:-/dev/null}"

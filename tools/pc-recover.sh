@@ -2,7 +2,7 @@
 # pc-recover: восстановление ssh-доступа на пк (zenoku-alpine) одной командой.
 #
 # Запуск ЛОКАЛЬНО на пк (root):
-#   curl -fsSL https://raw.githubusercontent.com/rival-afk/rsh/main/tools/pc-recover.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/Zenoku-Dev/rsh/main/tools/pc-recover.sh | sh
 #
 # Что делает: см. встроенный akfix (append-only restore authorized_keys,
 # PerSourcePenalties no, sshd -t + restart) + полная диагностика (лог и TG-алерт).

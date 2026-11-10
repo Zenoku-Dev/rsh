@@ -1,4 +1,4 @@
-module github.com/rival-afk/rsh
+module github.com/Zenoku-Dev/rsh
 
 go 1.27.0
 
