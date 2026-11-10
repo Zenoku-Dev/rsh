@@ -2788,7 +2788,13 @@ func mcpToolCall(id json.RawMessage, name string, arguments map[string]interface
 			mcpTextReply(id, "host и command обязательны", true)
 			return
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		toolTimeout := 10 * time.Minute
+		if v := os.Getenv("RSH_MCP_EXEC_TIMEOUT"); v != "" {
+			if d, err := time.ParseDuration(v); err == nil && d > 0 {
+				toolTimeout = d
+			}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), toolTimeout)
 		defer cancel()
 		exe, exeErr := os.Executable()
 		if exeErr != nil {
