@@ -136,9 +136,10 @@ type rshConfig struct {
 	AuthURL  string            `json:"auth_url"`
 	NetToken string            `json:"net_token"`
 	WoL      map[string]string `json:"wol"`
-	Self     string            `json:"self"`     // метка этого узла ("vps", "phone", "pc", "dev")
-	WoLFrom  string            `json:"wol_from"` // кто шлёт WoL-магию (обычно "phone" — всегда в LAN)
-	Keysync  *keysyncConf      `json:"keysync"`  // доп. pub-пути для публикации
+	Self     string            `json:"self"`               // метка этого узла ("vps", "phone", "pc", "dev")
+	WoLFrom  string            `json:"wol_from"`           // кто шлёт WoL-магию (обычно "phone" — всегда в LAN)
+	Keysync  *keysyncConf      `json:"keysync"`            // доп. pub-пути для публикации
+	MCPHint  *bool             `json:"mcp_hint,omitempty"` // false — не показывать подсказку MCP-агентам
 }
 
 func loadRshConfig() rshConfig {
@@ -2517,6 +2518,11 @@ func main() {
 	pcAkFix()
 	base := authURL()
 	args := os.Args[1:]
+	if h := detectAgentHarness(); h != "" {
+		if len(args) == 0 || (args[0] != "mcp" && args[0] != "-h" && args[0] != "--help" && args[0] != "help") {
+			printAgentHint(h)
+		}
+	}
 	if len(args) == 0 {
 		if ar, err := authenticate(); err == nil {
 			ownerDiskAdvice(ar)
@@ -2525,6 +2531,8 @@ func main() {
 		return
 	}
 	switch args[0] {
+	case "mcp":
+		cmdMcp()
 	case "-t", "-t1", "-t2", "-t3", "-t4", "-t5", "-t6", "-t7", "-t8", "-t9":
 		rest := args[1:]
 		sfx := strings.TrimPrefix(args[0], "-t")
@@ -2614,5 +2622,258 @@ func main() {
 			return
 		}
 		connect(base, args[0], strings.Join(args[1:], " "))
+	}
+}
+
+// ---- MCP: rsh как MCP-сервер для агентских харнессов (opencode, zcode, claude code, codex, antigravity...) ----
+
+type mcpTool struct {
+	Name        string                 `json:"name"`
+	Description string                 `json:"description"`
+	InputSchema map[string]interface{} `json:"inputSchema"`
+}
+
+type agentProbe struct {
+	name string
+	need []string
+}
+
+var agentProbes = []agentProbe{
+	{"opencode", []string{"opencode"}},
+	{"zcode", []string{"zcode"}},
+	{"claude-code", []string{"claude"}},
+	{"codex", []string{"codex"}},
+	{"antigravity", []string{"antigravity"}},
+	{"cursor", []string{"cursor"}},
+	{"antigravity", []string{"gemini"}},
+	{"windsurf", []string{"windsurf"}},
+	{"cline", []string{"cline"}},
+}
+
+func parentCommChain() []string {
+	var names []string
+	pid := os.Getppid()
+	for depth := 0; depth < 5; depth++ {
+		comm := ""
+		if b, err := os.ReadFile(fmt.Sprintf("/proc/%d/comm", pid)); err == nil {
+			comm = strings.TrimSpace(string(b))
+			names = append(names, strings.ToLower(comm))
+		}
+		b, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+		if err != nil {
+			break
+		}
+		f := strings.Fields(string(b))
+		if len(f) < 4 {
+			break
+		}
+		var nppid int64
+		if _, err := fmt.Sscanf(f[3], "%d", &nppid); err != nil {
+			break
+		}
+		if nppid == 0 || int(nppid) == pid {
+			break
+		}
+		pid = int(nppid)
+	}
+	return names
+}
+
+func detectAgentHarness() string {
+	if os.Getenv("RSH_MCP_HINT") == "0" {
+		return ""
+	}
+	cfg := loadRshConfig()
+	if cfg.MCPHint != nil && !*cfg.MCPHint {
+		return ""
+	}
+	for _, e := range os.Environ() {
+		key := strings.ToLower(strings.SplitN(e, "=", 2)[0])
+		for _, p := range agentProbes {
+			for _, n := range p.need {
+				if strings.Contains(key, n) {
+					return p.name
+				}
+			}
+		}
+	}
+	for _, comm := range parentCommChain() {
+		for _, p := range agentProbes {
+			for _, n := range p.need {
+				if strings.Contains(comm, n) {
+					return p.name
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func printAgentHint(harness string) {
+	fmt.Fprintf(os.Stderr, "rsh: похоже, ты внутри агентского харнесса (%s).\n", harness)
+	fmt.Fprintf(os.Stderr, "     rsh умеет работать MCP-сервером — агентам проще звать его инструментами:\n")
+	fmt.Fprintf(os.Stderr, "     {\"mcp\":{\"rsh\":{\"type\":\"stdio\",\"command\":[\"rsh\",\"mcp\"]}}}\n")
+	fmt.Fprintf(os.Stderr, "     (например opencode: секция mcp в opencode.json; выключить подсказку: RSH_MCP_HINT=0)\n")
+}
+
+func mcpSend(v interface{}) {
+	b, _ := json.Marshal(v)
+	buf := append(b, '\n')
+	_, _ = os.Stdout.Write(buf)
+}
+
+func mcpTools() []mcpTool {
+	strProp := func(name, desc string) map[string]interface{} {
+		return map[string]interface{}{"type": "string", "description": desc}
+	}
+	obj := func(props map[string]interface{}, required ...string) map[string]interface{} {
+		return map[string]interface{}{
+			"type":       "object",
+			"properties": props,
+			"required":   required,
+		}
+	}
+	return []mcpTool{
+		{
+			Name:        "rsh_exec",
+			Description: "Выполнить команду на удалённом узле zenoku (ssh). host: vps | phone | debian.",
+			InputSchema: obj(map[string]interface{}{
+				"host":    strProp("host", "vps | phone | debian"),
+				"command": strProp("command", "команда для exec (через sh -c на хосте)"),
+			}, "host", "command"),
+		},
+		{
+			Name:        "rsh_hosts",
+			Description: "Список узлов, доступных твоему ключу (из auth claims).",
+			InputSchema: obj(map[string]interface{}{}),
+		},
+		{
+			Name:        "rsh_status",
+			Description: "Статус авторизации rsh (role и доступные хосты).",
+			InputSchema: obj(map[string]interface{}{}),
+		},
+	}
+}
+
+func mcpTruncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max/2] + "\n... [tronc] ...\n" + s[len(s)-max/2:]
+}
+
+func mcpTextReply(id json.RawMessage, text string, isError bool) {
+	mcpSend(map[string]interface{}{
+		"jsonrpc": "2.0",
+		"id":      id,
+		"result": map[string]interface{}{
+			"content": []map[string]interface{}{
+				{"type": "text", "text": text},
+			},
+			"isError": isError,
+		},
+	})
+}
+
+func mcpToolCall(id json.RawMessage, name string, arguments map[string]interface{}) {
+	switch name {
+	case "rsh_exec":
+		host, _ := arguments["host"].(string)
+		command, _ := arguments["command"].(string)
+		if host == "" || command == "" {
+			mcpTextReply(id, "host и command обязательны", true)
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		defer cancel()
+		exe, exeErr := os.Executable()
+		if exeErr != nil {
+			mcpTextReply(id, "os.Executable: "+exeErr.Error(), true)
+			return
+		}
+		var stdout, stderr bytes.Buffer
+		cmd := exec.CommandContext(ctx, exe, host, "exec", command)
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		runErr := cmd.Run()
+		text := stdout.String()
+		if runErr != nil {
+			text += "\n[exit: " + runErr.Error() + "]"
+			if s := stderr.String(); s != "" {
+				text += "\n" + s
+			}
+		}
+		mcpTextReply(id, mcpTruncate(text, 100<<10), runErr != nil)
+	case "rsh_hosts", "rsh_status":
+		ar, err := authenticate()
+		if err != nil {
+			mcpTextReply(id, "auth: "+err.Error(), true)
+			return
+		}
+		mcpTextReply(id, "role: "+ar.Role+"\nhosts: "+strings.Join(ar.Hosts, ", "), false)
+	default:
+		mcpTextReply(id, "unknown tool: "+name, true)
+	}
+}
+
+func cmdMcp() {
+	reader := bufio.NewReaderSize(os.Stdin, 4<<10)
+	for {
+		line, err := reader.ReadBytes('\n')
+		if len(line) == 0 && err != nil {
+			return
+		}
+		var msg map[string]interface{}
+		if err := json.Unmarshal(bytes.TrimSpace(line), &msg); err != nil {
+			continue // не-JSON-строка — пропускаем
+		}
+		method, _ := msg["method"].(string)
+		id := msg["id"]
+		if params, ok := msg["params"].(map[string]interface{}); ok {
+			_ = params
+		}
+		var idRaw json.RawMessage
+		if v, ok := msg["id"]; ok {
+			b, _ := json.Marshal(v)
+			idRaw = b
+		}
+		switch method {
+		case "initialize":
+			mcpSend(map[string]interface{}{
+				"jsonrpc": "2.0",
+				"id":      idRaw,
+				"result": map[string]interface{}{
+					"protocolVersion": "2024-11-05",
+					"capabilities":    map[string]interface{}{"tools": map[string]interface{}{}},
+					"serverInfo":      map[string]interface{}{"name": "rsh", "version": "2026-11-10"},
+				},
+			})
+		case "notifications/initialized", "notifications/cancelled":
+		case "ping":
+			mcpSend(map[string]interface{}{"jsonrpc": "2.0", "id": idRaw, "result": map[string]interface{}{}})
+		case "tools/list":
+			mcpSend(map[string]interface{}{
+				"jsonrpc": "2.0",
+				"id":      idRaw,
+				"result":  map[string]interface{}{"tools": mcpTools()},
+			})
+		case "tools/call":
+			params, _ := msg["params"].(map[string]interface{})
+			name, _ := params["name"].(string)
+			args, _ := params["arguments"].(map[string]interface{})
+			mcpToolCall(idRaw, name, args)
+		default:
+			if id == nil {
+				continue
+			}
+			mcpSend(map[string]interface{}{
+				"jsonrpc": "2.0",
+				"id":      idRaw,
+				"error":   map[string]interface{}{"code": -32601, "message": "method not found: " + method},
+			})
+		}
+		if err == io.EOF {
+			return
+		}
 	}
 }

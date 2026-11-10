@@ -25,3 +25,14 @@ rsh net resolve pc     # резолв имени узла в адрес
 ```sh
 go build -o rsh .     # Go 1.27
 ```
+
+## MCP (для агентских харнессов)
+
+`rsh mcp` — stdio MCP-сервер с инструментами `rsh_exec`, `rsh_hosts`, `rsh_status`.
+Если rsh вызван из агентского харнесса (opencode, zcode, claude code, codex, antigravity, cursor, windsurf, cline — детект по окружению и /proc), клиент предлагает добавить себя в секцию `mcp` конфига харнесса:
+
+```json
+{"mcp":{"rsh":{"type":"stdio","command":["rsh","mcp"]}}}
+```
+
+Отключить подсказку: `RSH_MCP_HINT=0` или `"mcp_hint": false` в `~/.rsh/config.json`.
