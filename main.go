@@ -2797,6 +2797,7 @@ func mcpToolCall(id json.RawMessage, name string, arguments map[string]interface
 		}
 		var stdout, stderr bytes.Buffer
 		cmd := exec.CommandContext(ctx, exe, host, "exec", command)
+		cmd.Env = append(os.Environ(), "RSH_MCP_HINT=0")
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
 		runErr := cmd.Run()
