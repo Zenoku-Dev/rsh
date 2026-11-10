@@ -2727,6 +2727,10 @@ func mcpTools() []mcpTool {
 		return map[string]interface{}{"type": "string", "description": desc}
 	}
 	obj := func(props map[string]interface{}, required ...string) map[string]interface{} {
+		if required == nil {
+			// JSON Schema требует массив, а не null
+			required = []string{}
+		}
 		return map[string]interface{}{
 			"type":       "object",
 			"properties": props,
