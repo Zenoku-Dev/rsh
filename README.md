@@ -32,7 +32,7 @@ go build -o rsh .     # Go 1.27
 Если rsh вызван из агентского харнесса (opencode, zcode, claude code, codex, antigravity, cursor, windsurf, cline — детект по окружению и /proc), клиент предлагает добавить себя в секцию `mcp` конфига харнесса:
 
 ```json
-{"mcp":{"rsh":{"type":"stdio","command":["rsh","mcp"]}}}
+{"mcp":{"servers":{"rsh":{"type":"local","command":["rsh","mcp"]}}}}  (opencode)
 ```
 
 Отключить подсказку: `RSH_MCP_HINT=0` или `"mcp_hint": false` в `~/.rsh/config.json`.
