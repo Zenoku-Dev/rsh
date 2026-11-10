@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Zenoku-Dev/zenoku-design/main/assets/rsh/png/readme-banner-dark.png">
-    <img src="https://raw.githubusercontent.com/Zenoku-Dev/zenoku-design/main/assets/rsh/png/readme-banner.png" alt="rsh" width="440">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Zenoku-Dev/zenoku-design/main/assets/rsh/readme-banner-animated-dark.svg">
+    <img src="https://raw.githubusercontent.com/Zenoku-Dev/zenoku-design/main/assets/rsh/readme-banner-animated.svg" alt="rsh" width="440">
   </picture>
 </p>
 
