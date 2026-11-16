@@ -2457,12 +2457,34 @@ func hwidHash() string {
 			}
 		}
 	}
-	ub, err := exec.Command("uname", "-a").CombinedOutput()
-	if err != nil || strings.TrimSpace(string(ub)) == "" {
+	var uts syscall.Utsname
+	if err := syscall.Uname(&uts); err != nil {
 		// совсем без источников — гарантированно отклоняемся от «общего»
 		return hwidFrom("no-ident-source")
 	}
-	return hwidFrom(strings.TrimSpace(string(ub)))
+	cn := make([]byte, 65)
+	for i, c := range uts.Sysname {
+		if c == 0 {
+			break
+		}
+		cn[i] = byte(c)
+	}
+	rel := make([]byte, 65)
+	for i, c := range uts.Release {
+		if c == 0 {
+			break
+		}
+		rel[i] = byte(c)
+	}
+	maj := make([]byte, 65)
+	for i, c := range uts.Version {
+		if c == 0 {
+			break
+		}
+		maj[i] = byte(c)
+	}
+	stable := string(cn[:bytes.IndexByte(cn, 0)]) + " " + string(rel[:bytes.IndexByte(rel, 0)]) + " " + string(maj[:bytes.IndexByte(maj, 0)])
+	return hwidFrom(stable)
 }
 
 func hwidFrom(stable string) string {
@@ -2681,6 +2703,11 @@ func parentCommChain() []string {
 
 func detectAgentHarness() string {
 	if os.Getenv("RSH_MCP_HINT") == "0" {
+		return ""
+	}
+	// маркер подавления: если файл существует — подсказку не печатаем
+	if b, _ := os.ReadFile(filepath.Join(rshDir(), "mcp-hint-off")); b != nil {
+		_ = b
 		return ""
 	}
 	cfg := loadRshConfig()
