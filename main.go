@@ -2439,6 +2439,18 @@ func hwidHash() string {
 			return hwidFrom(strings.TrimSpace(string(b)))
 		}
 	}
+	// Android: SELinux может запрещать чтение /system/build.prop из untrusted_app.
+	// getprop — официальный системный интерфейс чтения пропертей, он работает.
+	if b, err := exec.Command("getprop", "ro.build.fingerprint").CombinedOutput(); err == nil {
+		if fp := strings.TrimSpace(string(b)); fp != "" {
+			model := ""
+			if m, err := exec.Command("getprop", "ro.product.model").CombinedOutput(); err == nil {
+				model = strings.TrimSpace(string(m))
+			}
+			return hwidFrom(fp + "|" + model)
+		}
+	}
+	// старый путь — если getprop недоступен под этой SELinux (deprecated)
 	if b, err := os.ReadFile("/system/build.prop"); err == nil {
 		for _, ln := range strings.Split(string(b), "\n") {
 			if strings.HasPrefix(ln, "ro.build.fingerprint=") {
