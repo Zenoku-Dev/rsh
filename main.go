@@ -13,6 +13,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -2824,6 +2825,23 @@ func mcpTextReply(id json.RawMessage, text string, isError bool) {
 	})
 }
 
+func mcpTextReplyWithMeta(id json.RawMessage, text string, isError bool, meta map[string]interface{}) {
+	result := map[string]interface{}{
+		"content": []map[string]interface{}{
+			{"type": "text", "text": text},
+		},
+		"isError": isError,
+	}
+	if meta != nil {
+		result["_meta"] = meta
+	}
+	mcpSend(map[string]interface{}{
+		"jsonrpc": "2.0",
+		"id":      id,
+		"result":  result,
+	})
+}
+
 func mcpToolCall(id json.RawMessage, name string, arguments map[string]interface{}) {
 	switch name {
 	case "rsh_exec":
@@ -2846,20 +2864,43 @@ func mcpToolCall(id json.RawMessage, name string, arguments map[string]interface
 			mcpTextReply(id, "os.Executable: "+exeErr.Error(), true)
 			return
 		}
+		start := time.Now()
 		var stdout, stderr bytes.Buffer
 		cmd := exec.CommandContext(ctx, exe, host, "exec", command)
 		cmd.Env = append(os.Environ(), "RSH_MCP_HINT=0")
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
 		runErr := cmd.Run()
-		text := stdout.String()
+		timeSpent := time.Since(start).Milliseconds()
+		exitCode := 0
 		if runErr != nil {
-			text += "\n[exit: " + runErr.Error() + "]"
-			if s := stderr.String(); s != "" {
-				text += "\n" + s
+			var exitErr *exec.ExitError
+			if errors.As(runErr, &exitErr) {
+				exitCode = exitErr.ExitCode()
+			} else {
+				exitCode = 255 // если fork/exec сломался — транспортный случай
 			}
 		}
-		mcpTextReply(id, mcpTruncate(text, 100<<10), runErr != nil)
+		text := stdout.String()
+		if se := stderr.String(); se != "" {
+			text += "\n[stderr]\n" + se
+		}
+		if runErr != nil && exitCode == 255 {
+			// транспортный сбой (ssh/auth/форк) — считаем ошибкой инструмента
+			mcpTextReplyWithMeta(id, mcpTruncate(text, 100<<10), true, map[string]interface{}{
+				"output":        mcpTruncate(stdout.String(), 100<<10),
+				"exit_code":     255,
+				"time_spent_ms": timeSpent,
+			})
+			return
+		}
+		// remote-exit == любая ненулевая цифра (или runErr==nil): инструмент отработал,
+		// это ответ команды, не провал инструмента.
+		mcpTextReplyWithMeta(id, mcpTruncate(text, 100<<10), false, map[string]interface{}{
+			"output":        mcpTruncate(stdout.String(), 100<<10),
+			"exit_code":     exitCode,
+			"time_spent_ms": timeSpent,
+		})
 	case "rsh_hosts", "rsh_status":
 		ar, err := authenticate()
 		if err != nil {
