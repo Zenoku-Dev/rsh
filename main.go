@@ -2440,14 +2440,20 @@ func hwidHash() string {
 		}
 	}
 	// Android: SELinux может запрещать чтение /system/build.prop из untrusted_app.
-	// getprop — официальный системный интерфейс чтения пропертей, он работает.
-	if b, err := exec.Command("getprop", "ro.build.fingerprint").CombinedOutput(); err == nil {
-		if fp := strings.TrimSpace(string(b)); fp != "" {
-			model := ""
-			if m, err := exec.Command("getprop", "ro.product.model").CombinedOutput(); err == nil {
-				model = strings.TrimSpace(string(m))
+	// getprop — официальный интерфейс; вызываем по АБСОЛЮТНОМУ пути (opencode-service,
+	// systemd и прочие спавнят с усечённым PATH, LookPath не находит).
+	for _, gp := range []string{"/system/bin/getprop", "/system/xbin/getprop", "getprop"} {
+		if b, err := exec.Command(gp, "ro.build.fingerprint").CombinedOutput(); err == nil {
+			if fp := strings.TrimSpace(string(b)); fp != "" {
+				model := ""
+				for _, gp2 := range []string{"/system/bin/getprop", "/system/xbin/getprop", "getprop"} {
+					if m, err := exec.Command(gp2, "ro.product.model").CombinedOutput(); err == nil {
+						model = strings.TrimSpace(string(m))
+						break
+					}
+				}
+				return hwidFrom(fp + "|" + model)
 			}
-			return hwidFrom(fp + "|" + model)
 		}
 	}
 	// старый путь — если getprop недоступен под этой SELinux (deprecated)
