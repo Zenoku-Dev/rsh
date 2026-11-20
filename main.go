@@ -25,11 +25,9 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"golang.org/x/crypto/ssh"
-	"golang.org/x/sys/unix"
 )
 
 // isExecutable reports whether path is a regular executable file.
@@ -503,20 +501,18 @@ func cmdKeygen() {
 func readPassword(prompt string) (string, error) {
 	fmt.Fprint(os.Stderr, prompt)
 	fd := int(os.Stdin.Fd())
-	old, err := unix.IoctlGetTermios(fd, unix.TCGETS)
+	old, err := termGet(fd)
 	if err != nil {
 		r := bufio.NewReader(os.Stdin)
 		l, _ := r.ReadString('\n')
 		return strings.TrimSpace(l), nil
 	}
-	noecho := *old
-	noecho.Lflag &^= unix.ECHO
-	if err := unix.IoctlSetTermios(fd, unix.TCSETS, &noecho); err != nil {
+	if err := termSet(fd, old, false); err != nil {
 		r := bufio.NewReader(os.Stdin)
 		l, _ := r.ReadString('\n')
 		return strings.TrimSpace(l), nil
 	}
-	defer unix.IoctlSetTermios(fd, unix.TCSETS, old)
+	defer termSet(fd, old, true)
 	r := bufio.NewReader(os.Stdin)
 	l, err := r.ReadString('\n')
 	fmt.Fprintln(os.Stderr)
@@ -1154,7 +1150,7 @@ func connect(base, target string, remoteCmd string) {
 		os.Exit(1)
 	}
 	argv := append([]string{"ssh"}, sshArgs...)
-	syscall.Exec(sshBin, argv, os.Environ())
+	execReplace(sshBin, argv, os.Environ())
 }
 
 // sshArgv performs auth, host validation and ssh-key provisioning for target
@@ -1257,7 +1253,7 @@ func sshRun(base, target, remoteCmd string) {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
-	syscall.Exec(bin, argv, os.Environ())
+	execReplace(bin, argv, os.Environ())
 }
 
 // parseMAC accepts "fc:9d:05:23:95:fa" and returns 6 bytes.
@@ -1399,7 +1395,7 @@ func pcExecSSH(ar *authResp, base, remoteCmd string) {
 		fmt.Fprintf(os.Stderr, "rsh pc: %v\n", err)
 		os.Exit(1)
 	}
-	syscall.Exec(bin, argv, os.Environ())
+	execReplace(bin, argv, os.Environ())
 }
 
 func cmdPC(base string, args []string) {
@@ -1422,7 +1418,7 @@ func cmdPC(base string, args []string) {
 			os.Exit(1)
 		}
 		pcDiskAdvice(ar, base)
-		syscall.Exec(bin, argv, os.Environ())
+		execReplace(bin, argv, os.Environ())
 	case "off":
 		pcExecSSH(ar, base, `systemctl poweroff 2>/dev/null || poweroff`)
 	case "reboot":
@@ -2313,12 +2309,10 @@ func ownerDiskAdvice(ar *authResp) {
 			return
 		}
 	}
-	var st unix.Statfs_t
-	if err := unix.Statfs("/", &st); err != nil {
+	total, avail, ok := fsFreeAt("/")
+	if !ok {
 		return
 	}
-	total := st.Blocks * uint64(st.Bsize)
-	avail := st.Bavail * uint64(st.Bsize)
 	if total == 0 {
 		return // не fs (напр. Termux /) — измерение бессмысленно, молчим
 	}
@@ -2348,9 +2342,11 @@ find $HOME -maxdepth 4 -name .git -type d 2>/dev/null | while read -r g; do git 
 `
 	cleanOut, cerr := exec.Command("/bin/sh", "-c", script).CombinedOutput()
 	_ = cerr
-	var st2 unix.Statfs_t
-	_ = unix.Statfs("/", &st2)
-	after := st2.Bavail * uint64(st2.Bsize) >> 30
+	_, after, ok2 := fsFreeAt("/")
+	if !ok2 {
+		after = 0
+	}
+	_ = after
 	fmt.Fprintf(os.Stderr, "чистка: %s=> свободно было %d ГБ, стало %d ГБ\n", strings.TrimSpace(string(cleanOut)), before, after)
 }
 
@@ -2476,33 +2472,11 @@ func hwidHash() string {
 			}
 		}
 	}
-	var uts syscall.Utsname
-	if err := syscall.Uname(&uts); err != nil {
+	stable, err := unameStable()
+	if err != nil || strings.TrimSpace(stable) == "" {
 		// совсем без источников — гарантированно отклоняемся от «общего»
 		return hwidFrom("no-ident-source")
 	}
-	cn := make([]byte, 65)
-	for i, c := range uts.Sysname {
-		if c == 0 {
-			break
-		}
-		cn[i] = byte(c)
-	}
-	rel := make([]byte, 65)
-	for i, c := range uts.Release {
-		if c == 0 {
-			break
-		}
-		rel[i] = byte(c)
-	}
-	maj := make([]byte, 65)
-	for i, c := range uts.Version {
-		if c == 0 {
-			break
-		}
-		maj[i] = byte(c)
-	}
-	stable := string(cn[:bytes.IndexByte(cn, 0)]) + " " + string(rel[:bytes.IndexByte(rel, 0)]) + " " + string(maj[:bytes.IndexByte(maj, 0)])
 	return hwidFrom(stable)
 }
 
@@ -2550,8 +2524,7 @@ func stdinIsTTY() bool {
 	// /dev/null и /dev/zero — тоже char-device, поэтому ModeCharDevice-чек
 	// врёт. Настоящий терминал опознаём по TCGETS-ioctl (только у tty он
 	// отвечает).
-	_, err := unix.IoctlGetTermios(int(os.Stdin.Fd()), unix.TCGETS)
-	return err == nil
+	return isTerminal(os.Stdin.Fd())
 }
 
 func main() {
