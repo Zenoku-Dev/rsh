@@ -36,3 +36,21 @@ go build -o rsh .     # Go 1.27
 ```
 
 Отключить подсказку: `RSH_MCP_HINT=0` или `"mcp_hint": false` в `~/.rsh/config.json`.
+
+## Быстрая установка (готовый релиз, без сборки)
+
+**Linux / macOS / Termux (Posix sh):**
+```sh
+curl -fsSL https://raw.githubusercontent.com/Zenoku-Dev/rsh/main/install.sh | sh
+```
+Бинарь выбирается по `uname`: linux-amd64, linux-arm64, linux-arm (armv7), Android/arm64 (`rsh-android-arm64`, PIE). Куда ставить: `$RSH_INSTALL_DIR` или `/usr/local/bin` (root) / `~/.local/bin`.
+
+**Windows 11 (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/Zenoku-Dev/rsh/main/install.ps1 | iex
+```
+Ставит `rsh-windows-amd64.exe` в `%LOCALAPPDATA%\Programs\rsh` (или `$env:RSH_INSTALL_DIR`) и добавляет каталог в PATH пользователя.
+
+Оба设置щика только скачивают готовый ассет из `releases/latest`, проверяют запуск `rsh -h`, делают бэкап предыдущего файла и пишут, откуда взять `~/.rsh/*`.
+
+Переменные: `RSH_INSTALL_DIR`, `RSH_INSTALL_TAG` (по умолчанию `latest`).
