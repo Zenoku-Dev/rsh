@@ -108,7 +108,8 @@ func rshDir() string {
 		return v
 	}
 	h, err := os.UserHomeDir()
-	if err != nil || h == "" {
+	// Android без HOME: os.UserHomeDir() может вернуть /sdcard — явный мусор.
+	if err != nil || h == "" || h == "/sdcard" || strings.HasSuffix(h, "/sdcard") {
 		// opencode MCP и др. харнессы иногда спавнят с пустым env (нет HOME):
 		// UserHomeDir() → "" и rsh уходил в /sdcard/.rsh без device-token.
 		if runtime.GOOS == "android" || runtime.GOOS == "linux" {
