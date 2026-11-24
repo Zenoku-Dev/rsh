@@ -107,7 +107,19 @@ func rshDir() string {
 	if v := os.Getenv("RSH_HOME"); v != "" {
 		return v
 	}
-	h, _ := os.UserHomeDir()
+	h, err := os.UserHomeDir()
+	if err != nil || h == "" {
+		// opencode MCP и др. харнессы иногда спавнят с пустым env (нет HOME):
+		// UserHomeDir() → "" и rsh уходил в /sdcard/.rsh без device-token.
+		if runtime.GOOS == "android" || runtime.GOOS == "linux" {
+			if _, e := os.Stat("/data/data/com.termux/files"); e == nil {
+				h = "/data/data/com.termux/files/home"
+			}
+		}
+		if h == "" {
+			h, _ = os.UserHomeDir()
+		}
+	}
 	return filepath.Join(h, ".rsh")
 }
 
