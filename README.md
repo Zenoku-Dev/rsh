@@ -54,3 +54,11 @@ irm https://raw.githubusercontent.com/Zenoku-Dev/rsh/main/install.ps1 | iex
 Оба设置щика только скачивают готовый ассет из `releases/latest`, проверяют запуск `rsh -h`, делают бэкап предыдущего файла и пишут, откуда взять `~/.rsh/*`.
 
 Переменные: `RSH_INSTALL_DIR`, `RSH_INSTALL_TAG` (по умолчанию `latest`).
+
+## MCP-инструменты (для агентов)
+
+`rsh mcp` отдаёт 7 инструментов:
+`rsh_exec`, `rsh_push`, `rsh_push_file`, `rsh_pull`, `rsh_pull_file`,
+`rsh_hosts`, `rsh_status`. Первые четыре — обёртки над `rsh push/pull`
+(с верификацией sha256 туда-обратно), результат содержит `output`,
+`exit_code`, `time_spent_ms` в `_meta`.

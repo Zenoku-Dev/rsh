@@ -1917,32 +1917,22 @@ func usage() {
 	fmt.Fprintf(os.Stderr, `rsh - rival ssh gateway
 
 usage:
-  rsh                     interactive server picker + connect
-  rsh <host> [<command>]  connect / run a command on a host (vps/phone/pc)
-  rsh -t [N] <host> [<cmd>]  tmp-папка rsh-t<N> на таргете как cwd (владелец = ip
-                              клиента; чистится после 24ч неактивности)
-  rsh keygen              generate auth keypair in ~/.rsh/
-  rsh login               password login (auth.rival-afk.com) + bind ~/.rsh key
-  rsh register            create account on auth server (waits for admin approval)
-  rsh admin add           register a pubkey (needs admin key)
-      --key "<pubkey>" --role user|admin [--hosts vps,phone,pc] [--label name]
-      --caps console,ssh
-  rsh pc                  wake by WoL (if needed) + interactive ssh (= "pc on")
-  rsh admin list          list registered keys
-  rsh admin rm <id>       remove a key
-  rsh net ip              print this device's LAN IPv4
-  rsh net serve           run UDP broadcast responder (--label, --port)
-  rsh net discover        broadcast-probe the LAN, print {label:ip} (--port, --timeout)
-  rsh net announce        report own LAN IP (+discovered peers) to auth (--label)
-  rsh net find <label>    query auth for a peer's current LAN IP
-  rsh net resolve <label> print a peer's IP: discover -> find -> override file
-  rsh wol <mac|label>  send Wake-on-LAN magic packet (--port 9)
-  rsh pc on            если ПК офлайн — WoL, дождаться sshd, открыть ssh-сессию
-  rsh pc off|reboot    выключить / перезагрузить ПК (если офлайн — сначала WoL)
-  rsh pc status        статус ПК (если офлайн — сначала WoL)
-  rsh pc exec <cmd>    команда на ПК (если офлайн — сначала WoL)
+  rsh                         интерактивный выбор узла + connect
+  rsh <host> [<command>]      connect / exec на узле (vps | phone | debian)
+  rsh -t [N] <host> [<cmd>]   tmp-папка rsh-t<N> как cwd на таргете
+  rsh push <host> <file|-> <remote>   загрузить файл (или stdin "-") на узел
+  rsh pull <host> <remote> <file|->   скачать файл с узла (или в stdout "-")
+  rsh wol <mac|label>         Wake-on-LAN (--port 9)
+  rsh mcp                     MCP-сервер для агентов (stdio JSON-RPC)
+  rsh 2fa <init|confirm|status|disable>   управление TOTP
+  rsh keysync <run|init-secret>          mesh-синхронизация authorized_keys
+  rsh keygen                  сгенерировать keypair в ~/.rsh/
+  rsh login                   парольный логин + привязка ключа
+  rsh register                создать аккаунт (ждёт одобрения админом)
+  rsh admin <add|list|rm>     управление ключами (нужны права)
+  rsh net <ip|serve|discover|announce|find|resolve>   LAN/peer discovery
 
-auth endpoint: %s (override: RSH_AUTH_URL or ~/.rsh/config.json auth_url)
+auth endpoint: %s (override: RSH_AUTH_URL или ~/.rsh/config.json auth_url)
 `, authURL())
 }
 
@@ -2600,6 +2590,10 @@ func main() {
 			connect(base, rest[0], strings.Join(rest[2:], " "))
 			return
 		}
+		if len(rest) >= 2 && (rest[1] == "push" || rest[1] == "pull") {
+			cmdTransfer(base, rest[1], rest[2:])
+			return
+		}
 		connect(base, rest[0], strings.Join(rest[1:], " "))
 		return
 	case "push", "pull":
@@ -2646,6 +2640,10 @@ func main() {
 				os.Exit(1)
 			}
 			connect(base, args[0], strings.Join(args[2:], " "))
+			return
+		}
+		if len(args) >= 2 && (args[1] == "push" || args[1] == "pull") {
+			cmdTransfer(base, args[1], append([]string{args[0]}, args[2:]...))
 			return
 		}
 		connect(base, args[0], strings.Join(args[1:], " "))
@@ -2779,6 +2777,41 @@ func mcpTools() []mcpTool {
 			}, "host", "command"),
 		},
 		{
+			Name:        "rsh_push",
+			Description: "Загрузить содержимое (string) в файл на удалённом узле. Эквивалент: echo content | rsh push <host> - <remote_path>.",
+			InputSchema: obj(map[string]interface{}{
+				"host":        strProp("host", "vps | phone | debian"),
+				"remote_path": strProp("remote_path", "абсолютный путь на целевом узле"),
+				"content":     strProp("content", "содержимое файла (utf8/текст)"),
+			}, "host", "remote_path", "content"),
+		},
+		{
+			Name:        "rsh_push_file",
+			Description: "Загрузить локальный файл (на машине агента) на удалённый узел.",
+			InputSchema: obj(map[string]interface{}{
+				"host":        strProp("host", "vps | phone | debian"),
+				"local_path":  strProp("local_path", "путь к локальному файлу"),
+				"remote_path": strProp("remote_path", "абсолютный путь на целевом узле"),
+			}, "host", "local_path", "remote_path"),
+		},
+		{
+			Name:        "rsh_pull",
+			Description: "Прочитать текстовый файл с удалённого узла и вернуть его содержимое. Эквивалент: rsh pull <host> <remote_path> -.",
+			InputSchema: obj(map[string]interface{}{
+				"host":        strProp("host", "vps | phone |debian"),
+				"remote_path": strProp("remote_path", "абсолютный путь на целевом узле"),
+			}, "host", "remote_path"),
+		},
+		{
+			Name:        "rsh_pull_file",
+			Description: "Скачать файл с удалённого узла в локальный файл на машине агента.",
+			InputSchema: obj(map[string]interface{}{
+				"host":        strProp("host", "vps | phone | debian"),
+				"remote_path": strProp("remote_path", "абсолютный путь на целевом узле"),
+				"local_path":  strProp("local_path", "куда сохранить локально"),
+			}, "host", "remote_path", "local_path"),
+		},
+		{
 			Name:        "rsh_hosts",
 			Description: "Список узлов, доступных твоему ключу (из auth claims).",
 			InputSchema: obj(map[string]interface{}{}),
@@ -2826,6 +2859,48 @@ func mcpTextReplyWithMeta(id json.RawMessage, text string, isError bool, meta ma
 		"id":      id,
 		"result":  result,
 	})
+}
+
+// mcpRunRsh — запустить дочерний rsh (Push/Pull透过 exec-подпроцесс,
+// чтобы не дублировать логику авторизации и sha256-верификации).
+func mcpRunRsh(id json.RawMessage, args []string, stdin string, meta map[string]interface{}) {
+	exe, err := os.Executable()
+	if err != nil {
+		mcpTextReply(id, "os.Executable: "+err.Error(), true)
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, exe, args...)
+	cmd.Env = append(os.Environ(), "RSH_MCP_HINT=0")
+	if stdin != "" {
+		cmd.Stdin = strings.NewReader(stdin)
+	}
+	start := time.Now()
+	var out, errb bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &errb
+	runErr := cmd.Run()
+	elapsed := time.Since(start).Milliseconds()
+	text := mcpTruncate(out.String(), 100<<10)
+	if runErr != nil {
+		text += "\n[exit: " + runErr.Error() + "]"
+		if s := errb.String(); s != "" {
+			text += "\n" + mcpTruncate(s, 8<<10)
+		}
+	}
+	if meta == nil {
+		meta = map[string]interface{}{}
+	}
+	meta["time_spent_ms"] = elapsed
+	if ee, ok := runErr.(*exec.ExitError); ok {
+		meta["exit_code"] = ee.ExitCode()
+	} else if runErr != nil {
+		meta["exit_code"] = 255
+	} else {
+		meta["exit_code"] = 0
+	}
+	mcpTextReplyWithMeta(id, text, runErr != nil, meta)
 }
 
 func mcpToolCall(id json.RawMessage, name string, arguments map[string]interface{}) {
@@ -2887,6 +2962,45 @@ func mcpToolCall(id json.RawMessage, name string, arguments map[string]interface
 			"exit_code":     exitCode,
 			"time_spent_ms": timeSpent,
 		})
+	case "rsh_push":
+		host, _ := arguments["host"].(string)
+		rp, _ := arguments["remote_path"].(string)
+		content, _ := arguments["content"].(string)
+		if host == "" || rp == "" {
+			mcpTextReply(id, "host и remote_path обязательны", true)
+			return
+		}
+		mcpRunRsh(id, []string{host, "push", "-", rp}, content,
+			map[string]interface{}{"host": host, "remote_path": rp, "op": "push"})
+	case "rsh_push_file":
+		host, _ := arguments["host"].(string)
+		lp, _ := arguments["local_path"].(string)
+		rp, _ := arguments["remote_path"].(string)
+		if host == "" || lp == "" || rp == "" {
+			mcpTextReply(id, "host, local_path и remote_path обязательны", true)
+			return
+		}
+		mcpRunRsh(id, []string{host, "push", lp, rp}, "",
+			map[string]interface{}{"host": host, "local_path": lp, "remote_path": rp, "op": "push_file"})
+	case "rsh_pull":
+		host, _ := arguments["host"].(string)
+		rp, _ := arguments["remote_path"].(string)
+		if host == "" || rp == "" {
+			mcpTextReply(id, "host и remote_path обязательны", true)
+			return
+		}
+		mcpRunRsh(id, []string{host, "pull", rp, "-"}, "",
+			map[string]interface{}{"host": host, "remote_path": rp, "op": "pull"})
+	case "rsh_pull_file":
+		host, _ := arguments["host"].(string)
+		rp, _ := arguments["remote_path"].(string)
+		lp, _ := arguments["local_path"].(string)
+		if host == "" || rp == "" || lp == "" {
+			mcpTextReply(id, "host, remote_path и local_path обязательны", true)
+			return
+		}
+		mcpRunRsh(id, []string{host, "pull", rp, lp}, "",
+			map[string]interface{}{"host": host, "remote_path": rp, "local_path": lp, "op": "pull_file"})
 	case "rsh_hosts", "rsh_status":
 		ar, err := authenticate()
 		if err != nil {
